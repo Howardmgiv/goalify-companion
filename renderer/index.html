@@ -14,18 +14,18 @@
     <section aria-labelledby="welcome"><h2 id="welcome">Welcome</h2>
       <p>Goalify Companion reads Goalify's saved observations after you log out or use /reload. Enable Community Sharing in Goalify, choose an account below, review its preview, tick consent and select Send. Contributions help improve community source data for everyone.</p>
       <p><strong>Sent:</strong> NPC and item IDs and names, vendor offers, loot methods, trainer professions and factions, approximate map locations, observation timestamps, client build, addon version and locale. An anonymous install token is used to authenticate.</p>
-      <p><strong>Never sent:</strong> account, character or realm names, GUIDs, goals, gold, inventory, mail or notes. An optional contributor display name is sent only if you choose to save it.</p>
+      <p><strong>Never sent:</strong> account, character or realm names (any text matching one of your characters or realms is removed before the preview), GUIDs, goals, gold, inventory, mail or notes. An optional contributor display name is sent only if you choose to save it.</p>
       <button id="privacy" class="link">Privacy policy</button>
     </section>
     <section><div class="heading"><h2>Accounts</h2><button id="choose">Choose WoW folder</button><button id="refresh">Refresh</button></div><p id="root-status"></p><div id="accounts"></div></section>
     <section id="preview-section" hidden><h2>Exact upload preview</h2><p id="preview-description"></p><pre id="preview"></pre><button id="send">Send this batch</button></section>
     <section><h2>Settings</h2>
       <label><input id="stop" type="checkbox"> Stop sharing (pause all uploads)</label>
-      <label><input id="auto" type="checkbox"> Sync automatically every 30 minutes while open</label>
-      <p>Automatic sync requires in-game sharing, account consent, and an initial reviewed manual send. A failed batch is retained for retry and shown above.</p>
+      <p>Nothing is sent automatically: every batch is previewed and sent only when you select Send. A failed batch is retained for retry and shown above.</p>
       <label for="credit">Optional contributor display name (1–32 printable characters)</label>
       <div class="heading"><input id="credit" maxlength="32" autocomplete="off"><button id="save-credit">Save credit</button><button id="clear-credit">Remove credit</button></div>
       <p>Deleting shared data removes this install and its observations from the service, then clears local credentials and consent.</p>
+      <p id="install-id"></p>
       <button id="delete" class="danger">Delete my shared data</button>
     </section>
     <p id="message" role="status" aria-live="polite"></p>

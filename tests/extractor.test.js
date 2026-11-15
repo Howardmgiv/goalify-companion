@@ -25,3 +25,20 @@ test('splits equal timestamps without skipping unsent records', () => {
   for (let n = 0; n < 3; n++) { const b = batch(extract(db, state), state, 2); sent.push(...b.payload.vendors.map(x => x.item_id)); state = b.next; }
   assert.equal(new Set(sent).size, 5); assert.equal(state.watermark, 100); assert.equal(extract(db, state).vendors.length, 0);
 });
+test('removes text that matches the account own character or realm names', () => {
+  const db = fixture();
+  db.Characters = { 'Kisskaya-Myrealm': { Name: 'Kisskaya', Realm: 'My Realm' } };
+  db.SourceObservations.Vendors[10].Name = 'Kisskaya';
+  db.SourceObservations.Vendors[10].Items['21:1'] = { ...db.SourceObservations.Vendors[10].Items['20:1'], ItemID: 21, Name: 'Gift for my realm friends' };
+  db.SourceObservations.Loot[20][10].Name = 'Alice MyRealm';
+  db.SourceObservations.Loot[20][10].Sites = { a: { ...loc(2), Zone: 'kisskaya home' } };
+  db.Trainers.NPCs[11].Name = 'KISSKAYA';
+  db.Trainers.NPCs[12] = { ...db.Trainers.NPCs[11], Name: 'Kisskayan Tailor' };
+  const data = extract(db);
+  assert.equal(data.vendors.length, 1, 'item whose name contains a realm is skipped');
+  assert.equal(data.vendors[0].npc_name, null, 'vendor NPC name equal to a character name is dropped');
+  assert.equal(data.loot[0].npc_name, null, 'realm name inside an NPC name is dropped');
+  assert.deepEqual(data.loot[0].locations.map(l => l.map_id), [1], 'zone containing a character name is dropped');
+  assert.deepEqual(data.trainers.map(t => t.npc_id), [12], 'trainer named after a character is skipped; partial word matches are kept');
+  assert.doesNotMatch(JSON.stringify(data), /kisskaya\b|my ?realm/i);
+});

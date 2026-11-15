@@ -11,7 +11,8 @@ function clearPreview() { selected = null; $('preview-section').hidden = true; $
 async function refresh() {
   const data = await window.goalify.list();
   $('root-status').textContent = data.hasRoot ? 'WoW folder selected. Account folder names are masked.' : 'No WoW folder found. Choose your World of Warcraft folder.';
-  $('stop').checked = data.stopped; $('auto').checked = data.auto;
+  $('stop').checked = data.stopped;
+  $('install-id').textContent = data.installId ? `Install ID: ${data.installId} (quote it if you ask us by email to delete your data).` : 'Not registered yet; an anonymous install ID is created on your first send.';
   const container = $('accounts'); container.replaceChildren();
   if (!data.accounts.length) { container.textContent = 'No Goalify account files found. Log out of WoW or use /reload, then refresh.'; return; }
   for (const account of data.accounts) {
@@ -28,10 +29,8 @@ $('choose').addEventListener('click', () => action(async () => { await window.go
 $('refresh').addEventListener('click', () => action(async () => { clearPreview(); await refresh(); message('Accounts refreshed.'); }));
 $('send').addEventListener('click', () => action(async () => { if (!selected) return; let result; try { result = await window.goalify.send(selected); } catch (e) { await refresh(); throw e; } message(`Batch ${result.status}${result.rejected ? `; ${result.rejected} records rejected by the service` : ''}${result.remaining ? `; ${result.remaining} records remain` : ''}.`); clearPreview(); await refresh(); }));
 $('stop').addEventListener('change', () => action(async () => { await window.goalify.stop($('stop').checked); clearPreview(); await refresh(); }));
-$('auto').addEventListener('change', () => action(async () => { await window.goalify.auto($('auto').checked); await refresh(); }));
 $('privacy').addEventListener('click', () => action(() => window.goalify.external('https://goalify.griffify.com/privacy-policy.html')));
 $('save-credit').addEventListener('click', () => action(async () => { await window.goalify.credit($('credit').value); message('Contributor display name saved.'); }));
 $('clear-credit').addEventListener('click', () => action(async () => { await window.goalify.credit(null); $('credit').value = ''; message('Contributor credit removed.'); }));
 $('delete').addEventListener('click', () => action(async () => { if (!window.confirm('Delete this install and all observations it shared? This cannot be undone.')) return; await window.goalify.deleteData(); clearPreview(); await refresh(); message('Shared data deleted and local credentials cleared.'); }));
-window.goalify.onUpdate(text => { message(text); action(refresh); });
 action(refresh);

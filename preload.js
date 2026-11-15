@@ -6,9 +6,8 @@ contextBridge.exposeInMainWorld('goalify', Object.freeze({
   list: () => ipcRenderer.invoke('list'), choose: () => ipcRenderer.invoke('choose'),
   preview: value => ipcRenderer.invoke('preview', id(value)), send: value => ipcRenderer.invoke('send', id(value)),
   consent: (account, value) => ipcRenderer.invoke('consent', { id: id(account), value: bool(value) }),
-  auto: value => ipcRenderer.invoke('auto', bool(value)), stop: value => ipcRenderer.invoke('stop', bool(value)),
+  stop: value => ipcRenderer.invoke('stop', bool(value)),
   credit: value => { if (value !== null && (typeof value !== 'string' || value.length > 64)) throw new TypeError('Invalid display name'); return ipcRenderer.invoke('credit', value); },
   deleteData: () => ipcRenderer.invoke('delete'),
-  external: value => { if (typeof value !== 'string' || value.length > 2048) throw new TypeError('Invalid link'); return ipcRenderer.invoke('external', value); },
-  onUpdate: callback => { if (typeof callback !== 'function') throw new TypeError('Invalid callback'); ipcRenderer.on('update', (_event, message) => callback(message)); }
+  external: value => { if (typeof value !== 'string' || value.length > 2048) throw new TypeError('Invalid link'); return ipcRenderer.invoke('external', value); }
 }));
