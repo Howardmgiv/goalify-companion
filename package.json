@@ -13,7 +13,7 @@
     "productName": "Goalify Companion",
     "directories": { "output": "dist" },
     "files": ["main.js", "preload.js", "lib/**/*", "renderer/**/*", "package.json"],
-    "win": { "signAndEditExecutable": false, "target": [{ "target": "nsis", "arch": ["x64"] }] },
+    "win": { "signExecutable": false, "icon": "build/icon.png", "target": [{ "target": "nsis", "arch": ["x64"] }] },
     "mac": { "target": ["dmg"], "category": "public.app-category.utilities" },
     "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true, "license": "LICENSE" }
   }
