@@ -2,6 +2,10 @@
 
 Goalify Companion is a standalone, opt-in desktop app for Goalify on WoW Forever. After logout or `/reload`, it reads `Goalify.lua` from a chosen World of Warcraft folder. It does not modify game files or play the game. It requires both Goalify's in-game Community Sharing setting and separate consent for each account.
 
+## Download
+
+Get the Windows installer from [Releases](https://github.com/Howardmgiv/goalify-companion/releases) or [goalify.griffify.com](https://goalify.griffify.com/#companion). Builds are not code-signed yet, so Windows SmartScreen may warn you. Before running it, compare the file hash with the SHA-256 in the release notes: `Get-FileHash .\Goalify-Companion-Setup-0.1.0.exe -Algorithm SHA256`. You can also build it yourself from this source (see below).
+
 ## Use
 
 Install and launch the app. Choose the World of Warcraft or `_forever_` folder if detection fails. Review the masked account, enable Community Sharing in Goalify, refresh after logout or `/reload`, click Preview, inspect the exact JSON, tick consent, and click Send. Data is uploaded only on that action; there is no automatic sync, so every batch is previewed first. Any text matching one of the account's own character or realm names is removed before the preview. Stop sharing pauses all uploads. Revoke account consent to discard its pending retry. Account folder names never leave the computer.
@@ -16,6 +20,6 @@ Only the previewed NPC and item identifiers and names, observations, approximate
 
 ## Development and packaging
 
-Requires Node.js and npm. `npm ci`, `npm test`, `npm start`, or `npx electron-builder --win --x64` (unsigned local NSIS build). macOS DMG is configured but must be built and tested on macOS. Generated output is under `dist/` and is ignored by Git. Do not publish the unsigned build.
+Requires Node.js and npm. `npm ci`, `npm test`, `npm start`, or `npx electron-builder --win --x64` (unsigned local NSIS build). macOS DMG is configured but must be built and tested on macOS. Generated output is under `dist/` and is ignored by Git. Releases are unsigned until a code-signing certificate is added; every release lists the installer's SHA-256 and the commit it was built from.
 
 The production API is `https://goalify.griffify.com/api/v1` (set in `lib/config.js`); its contract is documented in the goalify-site repository (`api/API.md`). Shared sources are published only after the Goalify admin reviews them. For local development only, `GOALIFY_API_BASE` may override it; HTTP is accepted only for localhost/127.0.0.1, and HTTPS only for localhost or the configured production host. No API connection is needed to preview data.
