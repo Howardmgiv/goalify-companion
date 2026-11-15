@@ -1,0 +1,33 @@
+Goalify Companion - Source-Available License
+
+Copyright (c) 2026 Griffify Studios. All rights reserved.
+
+The source code in this repository is published so that anyone can read,
+review and audit what the Goalify Companion does with their data.
+
+You MAY:
+  - view and read the source code;
+  - build the app from this source for your own personal use, to verify that
+    the published installers match the source;
+  - report bugs and security issues (see SECURITY.md).
+
+You MAY NOT, without prior written permission from Griffify Studios:
+  - copy, modify, merge, publish, distribute, sublicense or sell the source
+    code, the app, or any part of them;
+  - publish modified or rebuilt versions of the app;
+  - use the source code or any part of it in another product or service;
+  - use the Goalify or Griffify Studios names or logos for any other app.
+
+Contributions submitted to this repository (for example pull requests) may be
+used by Griffify Studios under these same terms.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+World of Warcraft is a trademark of Blizzard Entertainment, Inc. Goalify is
+not affiliated with or endorsed by Blizzard Entertainment.

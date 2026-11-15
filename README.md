@@ -23,3 +23,7 @@ Only the previewed NPC and item identifiers and names, observations, approximate
 Requires Node.js and npm. `npm ci`, `npm test`, `npm start`, or `npx electron-builder --win --x64` (unsigned local NSIS build). macOS DMG is configured but must be built and tested on macOS. Generated output is under `dist/` and is ignored by Git. Releases are unsigned until a code-signing certificate is added; every release lists the installer's SHA-256 and the commit it was built from.
 
 The production API is `https://goalify.griffify.com/api/v1` (set in `lib/config.js`); its contract is documented in the goalify-site repository (`api/API.md`). Shared sources are published only after the Goalify admin reviews them. For local development only, `GOALIFY_API_BASE` may override it; HTTP is accepted only for localhost/127.0.0.1, and HTTPS only for localhost or the configured production host. No API connection is needed to preview data.
+
+## License
+
+Source-available: you may read, audit and build this code for personal verification, but not copy, modify or redistribute it. See [LICENSE](LICENSE).
