@@ -4,7 +4,7 @@ Goalify Companion is a standalone, opt-in desktop app for Goalify on WoW Forever
 
 ## Download
 
-Get the Windows installer from [Releases](https://github.com/Howardmgiv/goalify-companion/releases) or [goalify.griffify.com](https://goalify.griffify.com/#companion). Builds are not code-signed yet, so Windows SmartScreen may warn you. Before running it, compare the file hash with the SHA-256 in the release notes: `Get-FileHash .\Goalify-Companion-Setup-0.1.0.exe -Algorithm SHA256`. You can also build it yourself from this source (see below).
+Get the Windows installer from [Releases](https://github.com/Howardmgiv/goalify-companion/releases) or [goalify.griffify.com](https://goalify.griffify.com/#companion). Builds are not code-signed yet, so Windows SmartScreen may warn you. Before running it, compare the file hash with the SHA-256 in the release notes: `Get-FileHash .\Goalify-Companion-Setup-0.1.1.exe -Algorithm SHA256`. You can also build it yourself from this source (see below).
 
 ## Use
 
