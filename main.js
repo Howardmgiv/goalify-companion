@@ -9,7 +9,9 @@ const { extract, batch, text } = require('./lib/extractor');
 const { ApiClient } = require('./lib/apiClient');
 
 let window, config, api, previews = new Map(), serial = Promise.resolve();
-const emptyConfig = () => ({ root: null, install_id: null, encrypted_token: null, stopped: false, accounts: {} });
+const emptyConfig = () => ({ root: null, install_id: null, encrypted_token: null, stopped: false, sendMode: 'auto', accounts: {} });
+const AUTO_BATCHES = 4, AUTO_MIN_GAP = 30_000;
+let lastAuto = 0;
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 async function save() {
   const file = configPath(), temp = file + '.new';
@@ -18,7 +20,8 @@ async function save() {
   await fs.rename(temp, file);
 }
 async function load() {
-  try { const raw = await fs.readFile(configPath(), 'utf8'); if (Buffer.byteLength(raw) > 16 * 1024 * 1024) throw new Error('Configuration is too large'); const data = JSON.parse(raw); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid configuration'); delete data.auto; return { ...emptyConfig(), ...data, accounts: data.accounts && typeof data.accounts === 'object' && !Array.isArray(data.accounts) ? data.accounts : {} }; }
+  try { const raw = await fs.readFile(configPath(), 'utf8'); if (Buffer.byteLength(raw) > 16 * 1024 * 1024) throw new Error('Configuration is too large'); const data = JSON.parse(raw); if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid configuration'); delete data.auto; // Configs saved before 0.1.1 consented under preview-only rules, so they stay manual until the user picks auto.
+  if (data.sendMode !== 'auto') data.sendMode = 'manual'; return { ...emptyConfig(), ...data, accounts: data.accounts && typeof data.accounts === 'object' && !Array.isArray(data.accounts) ? data.accounts : {} }; }
   catch (e) { if (e.code === 'ENOENT') return emptyConfig(); throw e; }
 }
 function accountState(id) { return config.accounts[id] ||= { consent: false, approved: false, watermark: 0, partialTime: null, partialHashes: [], lastSync: null, pending: null }; }
@@ -113,7 +116,7 @@ async function list() {
     try { const info = await inspect(a); result.push({ id: a.id, label: `Account ${i + 1} (${a.label})`, enabled: info.enabled, count: info.count, consent: s.consent === true, lastSync: s.lastSync, pending: !!s.pending }); }
     catch (e) { result.push({ id: a.id, label: `Account ${i + 1} (${a.label})`, enabled: false, count: 0, consent: s.consent === true, lastSync: s.lastSync, pending: !!s.pending, error: 'Unable to read or parse this Goalify.lua.' }); }
   }
-  return { accounts: result, stopped: config.stopped === true, installId: typeof config.install_id === 'string' ? config.install_id : null, hasRoot: !!config.root, registered: !!config.encrypted_token };
+  return { accounts: result, stopped: config.stopped === true, sendMode: config.sendMode, installId: typeof config.install_id === 'string' ? config.install_id : null, hasRoot: !!config.root, registered: !!config.encrypted_token };
 }
 async function preview(id) {
   const a = await accountFor(id), info = await inspect(a);
@@ -123,18 +126,13 @@ async function preview(id) {
   previews.set(id, proposal);
   return { json: JSON.stringify(proposal.payload, null, 2), count: proposal.count, remaining: proposal.remaining, retry: !!info.state.pending };
 }
-// Every upload is a batch the user previewed in this session; there is no automatic sync, so changed data is always reviewed.
-async function send(id) {
-  const a = await accountFor(id), info = await inspect(a), state = info.state;
-  if (config.stopped || !state.consent || !info.enabled) throw new Error('Sharing is stopped or consent / in-game opt-in is missing.');
-  const proposal = state.pending || previews.get(id);
-  if (!proposal || !proposal.count) throw new Error('Preview this account before sending.');
-  if (previews.get(id) !== proposal) throw new Error('Preview the pending batch before retrying.');
+// Uploads one batch. A failed batch is kept as `pending` and retried byte-for-byte (same batch ID).
+async function upload(id, state, proposal) {
   state.approved = true;
   state.pending = proposal;
   await save();
   const status = await api.status();
-  if (!status.uploads_enabled) throw new Error('Sharing is temporarily paused. The displayed batch is retained for retry.');
+  if (!status.uploads_enabled) throw new Error('Sharing is temporarily paused. The batch is retained for retry.');
   if (proposal.count > status.max_records_per_batch) {
     if (!proposal.attempted) { state.batchLimit = Math.min(status.max_records_per_batch, 5000); state.pending = null; previews.delete(id); await save(); throw new Error('The server batch limit is smaller. Please preview again before sending.'); }
     throw new Error('The server limit is now smaller than the pending retry. Revoke account consent to discard it, then preview again.');
@@ -146,10 +144,47 @@ async function send(id) {
   previews.delete(id); await save();
   return { status: result.status, accepted: result.accepted, rejected: result.rejected, remaining: proposal.remaining };
 }
+// Manual send: only a batch previewed in this session (or the retained retry, once previewed) is uploaded.
+async function send(id) {
+  const a = await accountFor(id), info = await inspect(a), state = info.state;
+  if (config.stopped || !state.consent || !info.enabled) throw new Error('Sharing is stopped or consent / in-game opt-in is missing.');
+  const proposal = state.pending || previews.get(id);
+  if (!proposal || !proposal.count) throw new Error('Preview this account before sending.');
+  if (previews.get(id) !== proposal) throw new Error('Preview the pending batch before retrying.');
+  return upload(id, state, proposal);
+}
+// Automatic mode: while the app is open, accounts with consent and the in-game opt-in send new observations.
+async function autoSync() {
+  if (config.sendMode !== 'auto' || config.stopped || Date.now() - lastAuto < AUTO_MIN_GAP) return { ran: false, batches: 0, records: 0 };
+  lastAuto = Date.now();
+  let batches = 0, records = 0;
+  for (const account of await accountList()) {
+    if (accountState(account.id).consent !== true) continue;
+    for (let i = 0; i < AUTO_BATCHES; i++) {
+      let info;
+      try { info = await inspect(account); } catch { break; }
+      if (!info.enabled || config.stopped || !info.state.consent) break;
+      const proposal = info.state.pending || batch(info.extracted, info.state, info.state.batchLimit || 5000);
+      if (!proposal.count) break;
+      try {
+        const result = await upload(account.id, info.state, proposal);
+        batches += 1; records += proposal.count;
+        if (!result.remaining) break;
+      } catch (e) {
+        return { ran: true, batches, records, error: String(e.message || e) };
+      }
+    }
+  }
+  return { ran: true, batches, records };
+}
+const SUPPORT_URL = 'https://buymeacoffee.com/griffifystudios';
 function validateBoolean(v) { if (typeof v !== 'boolean') throw new Error('Expected true or false'); return v; }
 function validateUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) throw new Error('Invalid link');
-  const u = new URL(value); if (u.protocol !== 'https:' || u.hostname !== 'goalify.griffify.com' || u.username || u.password || u.port) throw new Error('Link is not allowed'); return u.href;
+  const u = new URL(value);
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) throw new Error('Link is not allowed');
+  if (u.hostname === 'goalify.griffify.com' || u.href === SUPPORT_URL) return u.href;
+  throw new Error('Link is not allowed');
 }
 function registerIpc() {
   function handle(name, fn) { ipcMain.handle(name, (event, arg) => {
@@ -161,8 +196,10 @@ function registerIpc() {
   handle('choose', noArg(async () => { const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose your World of Warcraft or _forever_ folder' }); if (!result.canceled && result.filePaths.length === 1) { config.root = await resolveGameRoot(result.filePaths[0]); previews.clear(); await save(); } return list(); }));
   handle('preview', id => preview(id));
   handle('send', id => send(id));
-  handle('consent', async arg => { if (!arg || typeof arg !== 'object' || Object.keys(arg).sort().join(',') !== 'id,value') throw new Error('Invalid consent'); await accountFor(arg.id); const s = accountState(arg.id); s.consent = validateBoolean(arg.value); if (!s.consent) { s.approved = false; s.pending = null; previews.delete(arg.id); } await save(); return list(); });
-  handle('stop', async v => { config.stopped = validateBoolean(v); if (config.stopped) previews.clear(); await save(); return list(); });
+  handle('auto', noArg(autoSync));
+  handle('mode', async mode => { if (mode !== 'auto' && mode !== 'manual') throw new Error('Invalid send mode'); config.sendMode = mode; lastAuto = 0; await save(); return list(); });
+  handle('consent', async arg => { if (!arg || typeof arg !== 'object' || Object.keys(arg).sort().join(',') !== 'id,value') throw new Error('Invalid consent'); await accountFor(arg.id); const s = accountState(arg.id); s.consent = validateBoolean(arg.value); if (!s.consent) { s.approved = false; s.pending = null; previews.delete(arg.id); } else lastAuto = 0; await save(); return list(); });
+  handle('stop', async v => { config.stopped = validateBoolean(v); if (config.stopped) previews.clear(); else lastAuto = 0; await save(); return list(); });
   handle('credit', async name => { if (name !== null && !text(name, 32)) throw new Error('Display name must be 1–32 printable characters'); if (config.stopped) throw new Error('Sharing is stopped'); await api.credit(name, await ensureToken()); return true; });
   handle('delete', noArg(async () => { const t = token(); if (t) await api.delete(t); config.install_id = null; config.encrypted_token = null; config.accounts = {}; previews.clear(); await save(); return list(); }));
   handle('external', async url => { await shell.openExternal(validateUrl(url)); });

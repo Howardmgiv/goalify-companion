@@ -41,4 +41,10 @@ test('removes text that matches the account own character or realm names', () =>
   assert.deepEqual(data.loot[0].locations.map(l => l.map_id), [1], 'zone containing a character name is dropped');
   assert.deepEqual(data.trainers.map(t => t.npc_id), [12], 'trainer named after a character is skipped; partial word matches are kept');
   assert.doesNotMatch(JSON.stringify(data), /kisskaya\b|my ?realm/i);
+});test('sends numeric icon IDs only, null otherwise', () => {
+  const db = fixture(); db.SourceObservations.Icons = { 20: 133001 };
+  const data = extract(db);
+  assert.equal(data.vendors[0].icon_id, 133001); assert.equal(data.loot[0].icon_id, 133001);
+  for (const bad of ['Interface\\Icons\\x', -5, 0, 2 ** 31, 1.5]) { db.SourceObservations.Icons = { 20: bad }; assert.equal(extract(db).vendors[0].icon_id, null); }
+  assert.equal(extract(fixture()).loot[0].icon_id, null);
 });

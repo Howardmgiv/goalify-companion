@@ -5,6 +5,8 @@ const bool = value => { if (typeof value !== 'boolean') throw new TypeError('Inv
 contextBridge.exposeInMainWorld('goalify', Object.freeze({
   list: () => ipcRenderer.invoke('list'), choose: () => ipcRenderer.invoke('choose'),
   preview: value => ipcRenderer.invoke('preview', id(value)), send: value => ipcRenderer.invoke('send', id(value)),
+  auto: () => ipcRenderer.invoke('auto'),
+  mode: value => { if (value !== 'auto' && value !== 'manual') throw new TypeError('Invalid send mode'); return ipcRenderer.invoke('mode', value); },
   consent: (account, value) => ipcRenderer.invoke('consent', { id: id(account), value: bool(value) }),
   stop: value => ipcRenderer.invoke('stop', bool(value)),
   credit: value => { if (value !== null && (typeof value !== 'string' || value.length > 64)) throw new TypeError('Invalid display name'); return ipcRenderer.invoke('credit', value); },

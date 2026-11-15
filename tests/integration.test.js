@@ -10,7 +10,8 @@ test('account consent, preview, offline retry, opt-in and deletion are enforced 
   const base = path.join(__dirname, `.synthetic-${process.pid}`), root = path.join(base, 'WoW'), game = path.join(root, '_forever_');
   const saved = path.join(game, 'WTF', 'Account', 'SyntheticOnly', 'SavedVariables');
   const file = path.join(saved, 'Goalify.lua');
-  const lua = enabled => `GoalifyDB = { Settings = { CommunitySharing = ${enabled} }, Characters = { SECRET_CHARACTER = { Gold = 500 } }, SourceObservations = { Version=1, Interface=16001, Vendors={ [10]={Name="Vendor",Locations={ [1]={MapID=1,Zone="Zone"} }, Items={ ["20:1"]={ItemID=20,Name="Item",PackSize=1,PackCopper=5,ExtendedCost=false,Available=-1,LastSeen=100,Build="70888"} } } } } }`;
+  const extra = more => more ? `, ["21:1"]={ItemID=21,Name="Second",PackSize=1,PackCopper=7,ExtendedCost=false,Available=-1,LastSeen=200,Build="70888"}` : '';
+  const lua = (enabled, more = false) => `GoalifyDB = { Settings = { CommunitySharing = ${enabled} }, Characters = { SECRET_CHARACTER = { Gold = 500 } }, SourceObservations = { Version=1, Interface=16001, Vendors={ [10]={Name="Vendor",Locations={ [1]={MapID=1,Zone="Zone"} }, Items={ ["20:1"]={ItemID=20,Name="Item",PackSize=1,PackCopper=5,ExtendedCost=false,Available=-1,LastSeen=100,Build="70888"}${extra(more)} } } } } }`;
   await fs.mkdir(saved, { recursive: true }); await fs.writeFile(file, lua('true'));
   const handlers = new Map(), requests = [], app = new EventEmitter(); let win, show;
   const shown = new Promise(resolve => { show = resolve; });
@@ -52,8 +53,47 @@ test('account consent, preview, offline retry, opt-in and deletion are enforced 
     await fs.writeFile(file, lua('true')); const result = await invoke('send', id); assert.equal(result.status, 'duplicate');
     const batchRequests = requests.filter(r => r.url.endsWith('/batches')); assert.equal(batchRequests[0].opts.body, batchRequests[1].opts.body);
     state = await invoke('list'); assert.equal(state.accounts[0].pending, false); assert.equal(state.accounts[0].count, 0); assert.ok(state.accounts[0].lastSync);
+    await fs.writeFile(file, lua('true', true));
+    assert.equal((await invoke('list')).sendMode, 'auto', 'automatic sending is the default');
+    await invoke('mode', 'manual'); assert.equal((await invoke('auto')).ran, false, 'manual mode never sends on its own');
+    await assert.rejects(invoke('mode', 'sometimes'), /send mode/);
+    await invoke('mode', 'auto'); await invoke('consent', { id, value: false });
+    assert.deepEqual(await invoke('auto'), { ran: true, batches: 0, records: 0 }, 'no consent, nothing sent');
+    const before = batches;
+    await invoke('consent', { id, value: true });
+    assert.deepEqual(await invoke('auto'), { ran: true, batches: 1, records: 1 });
+    assert.equal(batches, before + 1);
+    assert.match(requests.filter(r => r.url.endsWith('/batches')).at(-1).opts.body, /"item_id":21/);
+    assert.equal((await invoke('auto')).ran, false, 'automatic sends are throttled');
+    state = await invoke('list'); assert.equal(state.accounts[0].count, 0);
+    await invoke('external', 'https://buymeacoffee.com/griffifystudios');
+    await assert.rejects(invoke('external', 'https://buymeacoffee.com/someoneelse'), /not allowed/);
     await invoke('delete'); state = await invoke('list'); assert.equal(state.registered, false); assert.equal(state.accounts[0].consent, false);
     await assert.rejects(invoke('external', 'https://services.griffify.com/test'), /not allowed/);
+  } finally {
+    Module._load = original; app.emit('window-all-closed'); await fs.rm(base, { recursive: true, force: true });
+  }
+});
+
+test('configs saved before automatic sending existed stay in manual mode', async () => {
+  const base = path.join(__dirname, `.legacy-${process.pid}`), userdata = path.join(base, 'userdata');
+  await fs.mkdir(userdata, { recursive: true });
+  await fs.writeFile(path.join(userdata, 'config.json'), JSON.stringify({ root: null, install_id: null, encrypted_token: null, stopped: false, accounts: { a: { consent: true } } }));
+  const handlers = new Map(), app = new EventEmitter(); let win, show;
+  const shown = new Promise(resolve => { show = resolve; });
+  app.getPath = () => userdata; app.whenReady = async () => {}; app.quit = () => {}; app.isPackaged = true;
+  class BrowserWindow { constructor() { win = this; this.webContents = { mainFrame: {}, setWindowOpenHandler() {}, on() {}, send() {} }; } async loadFile() {} show() { show(); } }
+  const fake = { app, BrowserWindow, dialog: { showErrorBox: () => { throw Error('Startup failed'); } }, ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
+    safeStorage: { isEncryptionAvailable: () => true }, shell: {}, net: { fetch: async () => { throw Error('Unexpected request'); } } };
+  const original = Module._load;
+  try {
+    delete require.cache[require.resolve('../main')];
+    Module._load = function(request, ...args) { return request === 'electron' ? fake : original.call(this, request, ...args); };
+    require('../main'); Module._load = original;
+    await shown;
+    const invoke = (name, arg) => handlers.get(name)({ sender: win.webContents, senderFrame: win.webContents.mainFrame }, arg);
+    assert.equal((await invoke('list')).sendMode, 'manual');
+    assert.equal((await invoke('auto')).ran, false);
   } finally {
     Module._load = original; app.emit('window-all-closed'); await fs.rm(base, { recursive: true, force: true });
   }
