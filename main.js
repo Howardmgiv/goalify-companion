@@ -5,7 +5,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
 const { parse, MAX_FILE } = require('./lib/luaParser');
-const { extract, batch, text } = require('./lib/extractor');
+const { extract, batch, text, TYPES } = require('./lib/extractor');
 const { ApiClient } = require('./lib/apiClient');
 
 let window, config, api, previews = new Map(), serial = Promise.resolve();
@@ -83,7 +83,7 @@ async function readAccount(account) {
     const buffer = Buffer.alloc(Math.min(stat.size + 1, MAX_FILE + 1)); let offset = 0;
     while (offset < buffer.length) { const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset); if (!bytesRead) break; offset += bytesRead; }
     if (offset > MAX_FILE || offset > stat.size) throw new Error('Goalify.lua changed while reading; try again');
-    return parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, offset))).GoalifyDB;
+    return { db: parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, offset))).GoalifyDB, savedAt: stat.mtime.toISOString() };
   } finally { await handle.close(); }
 }
 async function localeFor(game) {
@@ -91,10 +91,24 @@ async function localeFor(game) {
 }
 const inGame = db => db && typeof db === 'object' && db.Settings && db.Settings.CommunitySharing === true;
 async function inspect(account) {
-  const db = await readAccount(account), state = accountState(account.id), locale = await localeFor(account.game);
-  const extracted = extract(db, { ...state, locale });
-  const count = extracted.vendors.length + extracted.loot.length + extracted.trainers.length;
-  return { db, extracted, count, enabled: !!inGame(db), state };
+  const { db, savedAt } = await readAccount(account), state = accountState(account.id), locale = await localeFor(account.game);
+  const cursor = state.sourceVersion === 2 ? state : (state.sourceBackfill || {});
+  const extracted = extract(db, { ...cursor, locale });
+  const count = TYPES.reduce((n, key) => n + extracted[key].length, 0);
+  const totals = extract(db, { locale });
+  return { db, extracted, count, enabled: !!inGame(db), state, savedAt,
+    totals: Object.fromEntries(TYPES.map(key => [key, totals[key].length])),
+    newCounts: Object.fromEntries(TYPES.map(key => [key, extracted[key].length])) };
+}
+function proposalFor(info) {
+  const state = info.state;
+  if (state.pending) return state.pending;
+  const backfill = state.sourceVersion !== 2;
+  const proposal = batch(info.extracted, backfill ? (state.sourceBackfill || {}) : state, state.batchLimit || 5000);
+  if (backfill && proposal.next) proposal.next = proposal.remaining
+    ? { sourceBackfill: proposal.next }
+    : { ...proposal.next, sourceVersion: 2, sourceBackfill: null };
+  return proposal;
 }
 function token() {
   if (!config.encrypted_token) return null;
@@ -113,15 +127,15 @@ async function list() {
   const accounts = await accountList(); const result = [];
   for (let i = 0; i < accounts.length; i++) {
     const a = accounts[i], s = accountState(a.id);
-    try { const info = await inspect(a); result.push({ id: a.id, label: `Account ${i + 1} (${a.label})`, enabled: info.enabled, count: info.count, consent: s.consent === true, lastSync: s.lastSync, pending: !!s.pending }); }
+    try { const info = await inspect(a); result.push({ id: a.id, label: `Account ${i + 1} (${a.label})`, enabled: info.enabled, count: info.count, totals: info.totals, newCounts: info.newCounts, savedAt: info.savedAt, backfill: s.sourceVersion !== 2, consent: s.consent === true, lastSync: s.lastSync, pending: !!s.pending }); }
     catch (e) { result.push({ id: a.id, label: `Account ${i + 1} (${a.label})`, enabled: false, count: 0, consent: s.consent === true, lastSync: s.lastSync, pending: !!s.pending, error: 'Unable to read or parse this Goalify.lua.' }); }
   }
-  return { accounts: result, stopped: config.stopped === true, sendMode: config.sendMode, installId: typeof config.install_id === 'string' ? config.install_id : null, hasRoot: !!config.root, registered: !!config.encrypted_token };
+  return { version: require('./package.json').version, accounts: result, stopped: config.stopped === true, sendMode: config.sendMode, installId: typeof config.install_id === 'string' ? config.install_id : null, hasRoot: !!config.root, registered: !!config.encrypted_token };
 }
 async function preview(id) {
   const a = await accountFor(id), info = await inspect(a);
   if (!info.enabled) throw new Error('Enable Community Sharing in Goalify in-game first, then log out or /reload.');
-  const proposal = info.state.pending || batch(info.extracted, info.state, info.state.batchLimit || 5000);
+  const proposal = proposalFor(info);
   if (!proposal.count) throw new Error('No new valid observations to send.');
   previews.set(id, proposal);
   return { json: JSON.stringify(proposal.payload, null, 2), count: proposal.count, remaining: proposal.remaining, retry: !!info.state.pending };
@@ -133,6 +147,8 @@ async function upload(id, state, proposal) {
   await save();
   const status = await api.status();
   if (!status.uploads_enabled) throw new Error('Sharing is temporarily paused. The batch is retained for retry.');
+  if (['services', 'directions', 'training', 'flights'].some(k => proposal.payload[k]?.length) && status.source_schema !== 1)
+    throw new Error('The service needs its source-data upgrade. The batch is retained for retry.');
   if (proposal.count > status.max_records_per_batch) {
     if (!proposal.attempted) { state.batchLimit = Math.min(status.max_records_per_batch, 5000); state.pending = null; previews.delete(id); await save(); throw new Error('The server batch limit is smaller. Please preview again before sending.'); }
     throw new Error('The server limit is now smaller than the pending retry. Revoke account consent to discard it, then preview again.');
@@ -157,25 +173,27 @@ async function send(id) {
 async function autoSync() {
   if (config.sendMode !== 'auto' || config.stopped || Date.now() - lastAuto < AUTO_MIN_GAP) return { ran: false, batches: 0, records: 0 };
   lastAuto = Date.now();
-  let batches = 0, records = 0;
+  let batches = 0, records = 0, rejected = 0;
   for (const account of await accountList()) {
     if (accountState(account.id).consent !== true) continue;
     for (let i = 0; i < AUTO_BATCHES; i++) {
       let info;
-      try { info = await inspect(account); } catch { break; }
+      try { info = await inspect(account); }
+      catch { return { ran: true, batches, records, error: 'Unable to read or parse a consented Goalify.lua. Use /reload, then Refresh; no cursor was advanced for that file.' }; }
       if (!info.enabled || config.stopped || !info.state.consent) break;
-      const proposal = info.state.pending || batch(info.extracted, info.state, info.state.batchLimit || 5000);
+      const proposal = proposalFor(info);
       if (!proposal.count) break;
       try {
         const result = await upload(account.id, info.state, proposal);
-        batches += 1; records += proposal.count;
+        batches += 1; records += result.status === 'accepted' ? result.accepted : proposal.count;
+        rejected += result.rejected || 0;
         if (!result.remaining) break;
       } catch (e) {
         return { ran: true, batches, records, error: String(e.message || e) };
       }
     }
   }
-  return { ran: true, batches, records };
+  return { ran: true, batches, records, ...(rejected ? { rejected } : {}) };
 }
 const SUPPORT_URL = 'https://buymeacoffee.com/griffifystudios';
 function validateBoolean(v) { if (typeof v !== 'boolean') throw new Error('Expected true or false'); return v; }
@@ -192,6 +210,15 @@ function registerIpc() {
     const task = serial.then(() => fn(arg)); serial = task.catch(() => {}); return task;
   }); }
   const noArg = fn => value => { if (value !== undefined) throw new Error('Unexpected argument'); return fn(); };
+  handle('about', noArg(() => ({
+    version: require('./package.json').version,
+    distribution: process.windowsStore === true ? 'store' : app.isPackaged ? 'standalone' : 'development',
+  })));
+  handle('updates', noArg(async () => {
+    await shell.openExternal(process.windowsStore === true
+      ? 'ms-windows-store://downloadsandupdates'
+      : 'https://apps.microsoft.com/detail/9N4167K6C8CN');
+  }));
   handle('list', noArg(list));
   handle('choose', noArg(async () => { const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'], title: 'Choose your World of Warcraft or _forever_ folder' }); if (!result.canceled && result.filePaths.length === 1) { config.root = await resolveGameRoot(result.filePaths[0]); previews.clear(); await save(); } return list(); }));
   handle('preview', id => preview(id));

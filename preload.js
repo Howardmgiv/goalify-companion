@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 const id = value => { if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) throw new TypeError('Invalid account'); return value; };
 const bool = value => { if (typeof value !== 'boolean') throw new TypeError('Invalid setting'); return value; };
 contextBridge.exposeInMainWorld('goalify', Object.freeze({
+  about: () => ipcRenderer.invoke('about'), updates: () => ipcRenderer.invoke('updates'),
   list: () => ipcRenderer.invoke('list'), choose: () => ipcRenderer.invoke('choose'),
   preview: value => ipcRenderer.invoke('preview', id(value)), send: value => ipcRenderer.invoke('send', id(value)),
   auto: () => ipcRenderer.invoke('auto'),

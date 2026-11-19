@@ -9,12 +9,21 @@
   <script src="app.js" defer></script>
 </head>
 <body>
-  <header><div class="heading"><div><h1>Goalify Companion</h1><p>Share discoveries. Help other adventurers.</p></div><button id="support" class="support" title="Voluntary support for Griffify Studios via Buy Me a Coffee (opens in your browser)">Support Goalify</button></div></header>
+  <header>
+    <img class="header-compass" src="assets/compass.png" width="56" height="56" alt="Goalify compass">
+    <div class="header-details">
+      <div class="header-copy"><h1>Goalify Companion</h1><p>Share discoveries. Help other adventurers.</p><p id="app-version"></p></div>
+      <button id="support" class="support" title="Voluntary support for Griffify Studios via Buy Me a Coffee (opens in your browser)">Support Goalify</button>
+    </div>
+  </header>
   <main>
-    <section aria-labelledby="welcome"><h2 id="welcome">Welcome</h2>
+    <img class="body-banner" src="assets/goalify-banner.png" width="180" height="180" alt="Goalify adventurer banner with a checkered goal flag">
+    <section aria-labelledby="welcome">
+      <h2 id="welcome">Welcome to Goalify Companion</h2>
+      <p><strong>One Goalify, two connected tools.</strong> The Goalify addon manages your goals in game. This optional desktop companion shares permitted discoveries to help improve community source data. Install the addon separately.</p>
       <p>Goalify Companion reads Goalify's saved observations after you log out or use /reload. Enable Community Sharing in Goalify, then tick consent for an account below. By default new observations are sent automatically while this app is open; you can preview any batch first, or switch to manual sending in Settings. Contributions help improve community source data for everyone.</p>
-      <p><strong>Sent:</strong> NPC and item IDs and names, vendor offers, loot methods, trainer professions and factions, approximate map locations, observation timestamps, client build, addon version and locale. An anonymous install token is used to authenticate.</p>
-      <p><strong>Never sent:</strong> account, character or realm names (any text matching one of your characters or realms is removed before the preview), GUIDs, goals, gold, inventory, mail or notes. An optional contributor display name is sent only if you choose to save it.</p>
+      <p><strong>Sent:</strong> NPC services and guard questions, guard-reported destinations and transport tags, training offers and costs, flight nodes, vendor offers, loot methods, trainer professions, approximate locations, observation timestamps and captured builds. Addon version and locale accompany an anonymous install token.</p>
+      <p><strong>Never sent:</strong> account, character or realm names (matching text is removed before preview), GUIDs, training availability or learned status, unlocked or reachable flight paths, goals, balances, inventory, mail or notes. An optional contributor display name is sent only if you choose to save it.</p>
       <button id="privacy" class="link">Privacy policy</button>
     </section>
     <section><div class="heading"><h2>Accounts</h2><button id="choose">Choose WoW folder</button><button id="refresh">Refresh</button></div><p id="root-status"></p><div id="accounts"></div></section>
@@ -32,6 +41,12 @@
       <p>Deleting shared data removes this install and its observations from the service, then clears local credentials and consent.</p>
       <p id="install-id"></p>
       <button id="delete" class="danger">Delete my shared data</button>
+    </section>
+    <section aria-labelledby="about-heading"><h2 id="about-heading">About &amp; updates</h2>
+      <p id="about-version">Loading version...</p>
+      <p id="about-updates"></p>
+      <button id="updates">View Microsoft Store listing</button>
+      <p>Normal Store updates are installed in place and keep your settings. Keep the same Store installation; do not uninstall to update. Updates may wait until you close the app. Moving from the standalone EXE to the Store is a separate installation; settings are not automatically migrated.</p>
     </section>
     <p id="message" role="status" aria-live="polite"></p>
   </main>

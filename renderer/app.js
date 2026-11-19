@@ -20,6 +20,10 @@ function renderCards(payload) {
     ['Vendors', payload.vendors, r => [`${r.item_name || `Item ${r.item_id}`}${r.pack_size > 1 ? ` x${r.pack_size}` : ''} for ${money(r.pack_copper)}${r.extended_cost ? ' + other currency' : ''}`, `Sold by ${npc(r)} · ${where(r)}`]],
     ['Loot', payload.loot, r => [`Item ${r.item_id} from ${r.method}`, `${npc(r)} · seen ${r.sightings}x · ${where(r)}`]],
     ['Trainers', payload.trainers, r => [`${r.profession} trainer (${r.faction})`, `${npc(r)} · ${where(r)}`]],
+    ['NPC services and guard questions', payload.services, r => [`${r.category}: ${r.value}${r.detail ? ` — ${r.detail}` : ''}`, `${npc(r)} · ${where(r)}`]],
+    ['Guard directions', payload.directions, r => [`${r.name}${r.service ? ` · ${r.service}` : ''}${r.detail ? `: ${r.detail}` : ''}`, `Reported by ${r.reporter_name} (NPC ${r.reporter_npc}) · destination ${where(r)}`]],
+    ['Training offers', payload.training, r => [`${r.name}${r.rank ? ` (${r.rank})` : ''} · ${money(r.cost)}`, `${npc(r)} · ${where(r)}`]],
+    ['Flight nodes', payload.flights, r => [`${r.name} (node ${r.node_id})`, where(r)]],
   ];
   const box = el('div', null, 'cards');
   for (const [title, rows, describe] of groups) {
@@ -46,6 +50,9 @@ async function refresh() {
     box.append(el('h3', account.label));
     box.append(el('p', account.error || (account.enabled ? 'In-game sharing enabled' : 'In-game sharing NOT enabled — enable Community Sharing in Goalify first.'), account.enabled ? 'good' : 'warning'));
     box.append(el('p', `${account.count} new valid records · Last sync: ${account.lastSync ? new Date(account.lastSync).toLocaleString() : 'Never'}${account.pending ? ' · Failed batch retained for retry' : ''}`));
+    if (account.savedAt) box.append(el('p', `Game file last saved: ${new Date(account.savedAt).toLocaleString()}. Use /reload or log out to save current interactions.`, 'meta'));
+    if (account.totals) box.append(el('p', `Eligible saved observations: ${Object.entries(account.totals).map(([type, count]) => `${type}: ${count}`).join(' · ')}. These are source facts, not a count of visits.`, 'meta'));
+    if (account.backfill) box.append(el('p', 'Source upgrade: historical observations will be rechecked once; your old upload watermark will not hide guard/training data.', 'warning'));
     const label = el('label'), check = document.createElement('input'); check.type = 'checkbox'; check.checked = account.consent;
     label.append(check, document.createTextNode(mode === 'auto' ? ' I consent to share this account’s anonymous observations, sent automatically while this app is open' : ' I consent to share this account’s anonymous observations after I preview them'));
     box.append(label);
@@ -67,8 +74,12 @@ async function autoSend() {
   if (!result.ran) return;
   if (result.batches) { clearPreview(); await refresh(); }
   if (result.error) message(`Automatic send stopped: ${result.error}${result.batches ? ` (${result.records} records sent first)` : ''}. It will retry later.`);
-  else if (result.batches) message(`Sent ${result.records} records automatically in ${result.batches} batch${result.batches === 1 ? '' : 'es'}.`);
+  else if (result.batches) message(`Service confirmed ${result.records} records in ${result.batches} batch${result.batches === 1 ? '' : 'es'}.${result.rejected ? ` ${result.rejected} records were rejected and NOT stored; review the data before assuming sharing is complete.` : ''}`);
 }
+$('updates').addEventListener('click', () => action(async () => {
+  await window.goalify.updates();
+  message('Opened Microsoft Store. Check update availability there; this app has not checked whether a newer version is available.');
+}));
 $('choose').addEventListener('click', () => action(async () => { await window.goalify.choose(); clearPreview(); await refresh(); await autoSend(); }));
 $('refresh').addEventListener('click', () => action(async () => { clearPreview(); await refresh(); message('Accounts refreshed.'); await autoSend(); }));
 $('send').addEventListener('click', () => action(async () => { if (!selected) return; let result; try { result = await window.goalify.send(selected); } catch (e) { await refresh(); throw e; } message(`Batch ${result.status}${result.rejected ? `; ${result.rejected} records rejected by the service` : ''}${result.remaining ? `; ${result.remaining} records remain` : ''}.`); clearPreview(); await refresh(); }));
@@ -79,5 +90,17 @@ $('support').addEventListener('click', () => action(() => window.goalify.externa
 $('save-credit').addEventListener('click', () => action(async () => { await window.goalify.credit($('credit').value); message('Contributor display name saved.'); }));
 $('clear-credit').addEventListener('click', () => action(async () => { await window.goalify.credit(null); $('credit').value = ''; message('Contributor credit removed.'); }));
 $('delete').addEventListener('click', () => action(async () => { if (!window.confirm('Delete this install and all observations it shared? This cannot be undone.')) return; await window.goalify.deleteData(); clearPreview(); await refresh(); message('Shared data deleted and local credentials cleared.'); }));
-action(async () => { await refresh(); await autoSend(); });
+action(async () => {
+  const about = await window.goalify.about();
+  const store = about.distribution === 'store';
+  const channel = store ? 'Microsoft Store / MSIX' : about.distribution === 'development' ? 'Development build' : 'Standalone installation';
+  $('app-version').textContent = `Version ${about.version}`;
+  $('about-version').textContent = `Version ${about.version} · ${channel}`;
+  $('about-updates').textContent = store
+    ? 'Microsoft Store manages updates. Enable app updates in Store settings, or open Store updates below. Update availability is checked by the Store, not by this app.'
+    : 'This installation is not managed by Microsoft Store. Use the standalone installer for in-place updates, or view the Store listing. Installing the Store version does not automatically migrate standalone settings.';
+  $('updates').textContent = store ? 'Open Microsoft Store updates' : 'View Microsoft Store listing';
+  await refresh();
+  await autoSend();
+});
 setInterval(() => action(autoSend), AUTO_EVERY);
